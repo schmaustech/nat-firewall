@@ -1,4 +1,6 @@
-# nat-firewall
+# **Linux NAT Router**
+
+Anyone who has ever done a proof of concept at a customer site knows how daunting it can be.  There is allocating the customers environment from a physical space perspective, power and cooling and then the elephant in the room networking.   Networking always tends to be the most challenging because the way a customer handles their network varies from each and every customer.   Hence when delivering a proof of concept wouldn't it be awesome if all we needed was a single ipaddress and uplink for connectivity?   Linux has always given us the capability to provide such a simple elegant solution.  Its the very reason why router distros like OPNsense, OpenWRT, pfSense and IPFire are based on Linux.  
 
 ~~~bash
 [root@bmo ~]# firewall-cmd --get-active-zone
