@@ -113,6 +113,25 @@ internal (active)
   rich rules:
 ~~~
 
+
+~~~bash
+[root@router ~]# firewall-cmd --permanent --new-policy policy_int_to_ext
+success
+[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --add-ingress-zone internal
+success
+[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --add-egress-zone external
+success
+[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --set-priority 100
+success
+[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --set-target ACCEPT
+success
+[root@router ~]# firewall-cmd --reload
+success
+[root@router ~]# firewall-cmd --permanent --zone=internal --add-service=dns
+success
+[root@router ~]# firewall-cmd --reload~~~
+
+
 ~~~bash
 firewall-cmd --permanent --new-policy policy_int_to_ext
 firewall-cmd --permanent --policy policy_int_to_ext --add-ingress-zone internal
