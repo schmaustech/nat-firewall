@@ -4,46 +4,79 @@
 
 Anyone who has ever done a proof of concept at a customer site knows how daunting it can be.  There is allocating the customers environment from a physical space perspective, power and cooling and then the elephant in the room networking.   Networking always tends to be the most challenging because the way a customer architects and secures their network varies from each and every customer.   Hence when delivering a proof of concept wouldn't it be awesome if all we needed was a single ipaddress and uplink for connectivity?   Linux has always given us the capability to provide such a simple elegant solution.  It's the very reason why router distros like OPNsense, OpenWRT, pfSense and IPFire are based on Linux.  In the following blog I will review configuring such a state with the idea of providing the simplicity of a single uplink for a proof of concept.
 
-In my example I need to deliver a working Red Hat OpenShift 3 node compact cluster to the customers site with a fourth node acting as gateway box which is also running some infrastructure components and a switch to tie it alltogether.  In the diagram below we can see the layout of the configuration and how the networking is setup.   We can see I have a interface one the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.
+In this example I wanted to deliver a working Red Hat OpenShift 3 node compact cluster that I could bring anywhere.   A fourth node acting as the gateway box will also run some infrastructure components with a switch to tie it all together.  In the diagram below we can see the layout of the configuration and how the networking is setup.  I should note this could use four physical boxes or in my testing I had all 4 nodes virtualized.   We can see I have a interface enp1s0 on the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface enp2s0 which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.  The internal network will never change but the external network could be anything and could change if we wanted it to.   What this means when bringing this setup to another location is I just need to update the enp1s0 interface with the right ipaddress, gateway and nameserver.   Further to ensure the OpenShift api and ingress wildcards resolve the external DNS (whatever controls that) will need those two records added and pointed to the enp1s0 interface.   Nothing changes on the OpenShift cluster nodes or gateway node configuration of dhcp or bind.
 
 <img src="poc-in-box.png" style="width: 1000px;" border=0/>
 
+The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with dhcp and bind services both of which are listening only on the internal enp2s0 interface.  In order to have the proper network address translation and service redirection we need to modify the default firewalld configuration on the box.  
+
+First let's go ahead and see what the active zone is with firewalld.   We will find that both interfaces are in the public zone.
+
 ~~~bash
-[root@bmo ~]# firewall-cmd --get-active-zone
+# firewall-cmd --get-active-zone
 public
   interfaces: enp2s0 enp1s0
-[root@bmo ~]# EXTERNAL=enp1s0
-[root@bmo ~]# INTERNAL=enp2s0
-[root@bmo ~]# firewall-cmd --set-default-zone=internal
+~~~
+
+We will first set our two interfaces to variables to make the rest of the commands easy to follow.  Interface enp1s0 will be set to external and enp2s0 will be set to internal.  Then we will go ahead and create an internal zone.  Note we do not need to create an external zone because one exists by default with firewalld.   We can then assign the interfaces to their proper zones.
+
+~~~bash
+# EXTERNAL=enp1s0
+# INTERNAL=enp2s0
+
+# firewall-cmd --set-default-zone=internal
 success
-[root@bmo ~]# firewall-cmd --change-interface=$EXTERNAL --zone=external --permanent
+
+# firewall-cmd --change-interface=$EXTERNAL --zone=external --permanent
 The interface is under control of NetworkManager, setting zone to 'external'.
 success
-[root@bmo ~]# firewall-cmd --change-interface=$INTERNAL --zone=internal --permanent
+
+# firewall-cmd --change-interface=$INTERNAL --zone=internal --permanent
 The interface is under control of NetworkManager, setting zone to 'internal'.
 success
-[root@bmo ~]# firewall-cmd --zone=external --add-masquerade --permanent
+~~~
+
+Next we can enable masquerading between the zones.  We will find that by default masquerading was enabled by default for the external zone.  However if one chose different zone names we need to point out that both need to be set.
+
+~~~bash
+# firewall-cmd --zone=external --add-masquerade --permanent
 Warning: ALREADY_ENABLED: masquerade
 success
-[root@bmo ~]# firewall-cmd --zone=internal --add-masquerade --permanent
+
+# firewall-cmd --zone=internal --add-masquerade --permanent
 success
-[root@bmo ~]# firewall-cmd --direct --permanent --add-rule ipv4 nat POSTROUTING 0 -o $EXTERNAL -j MASQUERADE
+~~~
+
+Now we can add the rules to forward traffic between zones.
+
+~~~bash
+# firewall-cmd --direct --permanent --add-rule ipv4 nat POSTROUTING 0 -o $EXTERNAL -j MASQUERADE
 success
-[root@bmo ~]# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $INTERNAL -o $EXTERNAL -j ACCEPT
+
+# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $INTERNAL -o $EXTERNAL -j ACCEPT
 success
-[root@bmo ~]# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $EXTERNAL -o $INTERNAL -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $EXTERNAL -o $INTERNAL -m state --state RELATED,ESTABLISHED -j ACCEPT
 success
-[root@bmo ~]# firewall-cmd --reload
+~~~
+
+At this point let's go ahead and reload our firewall and show the active zones again.  Now we should see our interfaces are in their proper zones and active. 
+
+~~~bash
+# firewall-cmd --reload
 success
-[root@bmo ~]# firewall-cmd --get-active-zone
+
+# firewall-cmd --get-active-zone
 external
   interfaces: enp1s0
 internal
   interfaces: enp2s0
 ~~~
 
+If we look at each zone we can see the configuration that currently exists for each zone.
+
 ~~~bash
-[root@bmo ~]# firewall-cmd --list-all --zone=external
+# firewall-cmd --list-all --zone=external
 external (active)
   target: default
   icmp-block-inversion: no
@@ -58,7 +91,8 @@ external (active)
   source-ports:
   icmp-blocks:
   rich rules:
-[root@bmo ~]# firewall-cmd --list-all --zone=internal
+
+# firewall-cmd --list-all --zone=internal
 internal (active)
   target: default
   icmp-block-inversion: no
@@ -75,16 +109,18 @@ internal (active)
   rich rules:
 ~~~
 
+The zones need to be updated so we can ensure any external traffic bound for https and port 6443 is sent to the OpenShift ingress virtual ipaddress and OpenShift api virual ipaddress respectively.   We also need to allow for DNS resolution traffic internally on the internal zone.
+
 ~~~bash
-[root@bmo ~]# firewall-cmd --permanent --zone=external --add-service=https
+# firewall-cmd --permanent --zone=external --add-service=https
 success
-[root@bmo ~]# firewall-cmd --permanent --zone=internal --add-service=https
+# firewall-cmd --permanent --zone=internal --add-service=https
 success
-[root@bmo ~]# firewall-cmd --permanent --zone=external --add-forward-port=port=443:proto=tcp:toport=443:toaddr=192.168.100.72
+# firewall-cmd --permanent --zone=external --add-forward-port=port=443:proto=tcp:toport=443:toaddr=192.168.100.72
 success
-[root@bmo ~]# firewall-cmd --reload
+# firewall-cmd --reload
 success
-[root@bmo ~]# firewall-cmd --list-all --zone=external
+# firewall-cmd --list-all --zone=external
 external (active)
   target: default
   icmp-block-inversion: no
@@ -117,6 +153,7 @@ internal (active)
   rich rules:
 ~~~
 
+Up to this point we would have a working setup if we were on Red Hat Enterprise Linux 8.x.  However there were changes made with Red Hat Enterprise Linux 9.x and hence we need to add a internal to external policy to ensure traffic flow.
 
 ~~~bash
 [root@router ~]# firewall-cmd --permanent --new-policy policy_int_to_ext
