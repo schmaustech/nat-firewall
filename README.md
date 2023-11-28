@@ -338,7 +338,7 @@ adlink-vm5.schmaustech.com   Ready    control-plane,master,worker   2d23h   v1.2
 adlink-vm6.schmaustech.com   Ready    control-plane,master,worker   2d22h   v1.27.6+f67aeb3   192.168.100.133   <none>        Red Hat Enterprise Linux CoreOS 414.92.202311061957-0 (Plow)   5.14.0-284.40.1.el9_2.aarch64   cri-o://1.27.1-13.1.rhaos4.14.git956c5f7.el9
 ~~~
 
-We can see from the above output the nodes are running on the 192.168.100.0/24 network which is our internal network.  However if we look at the system I am running on and ping the api.adlink.schmaustech.com we can see the response is coming from 192.168.0.75 which just happens to be the interface on enp1s0 of our gateway box.
+We can see from the above output the nodes are running on the 192.168.100.0/24 network which is our internal network.  However if we ping from my Mac to api.adlink.schmaustech.com we can see the response is coming from 192.168.0.75 which just happens to be the interface on enp1s0 of our gateway box.  We can also see any ingress names like console-openshift-console.apps.adlink.schmaustech.com also resolve to the 192.168.0.75 address.
 
 ~~~bash
 % ping api.adlink.schmaustech.com -t 1
@@ -358,46 +358,20 @@ PING console-openshift-console.apps.adlink.schmaustech.com (192.168.0.75): 56 da
 round-trip min/avg/max/stddev = 2.946/2.946/2.946/nan ms
 ~~~
 
+Finally if we curl the OpenShift console from my Mac we can see we also get a 200 response so the console is accessible from outside of the private network OpenShift is installed on.
+
 ~~~bash
-% curl -k https://console-openshift-console.apps.adlink.schmaustech.com
-<!DOCTYPE html>
-<html lang="en" class="no-js">
-
-  <head>
-    <base href="/">
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"> 
-      
-      <title>Red Hat OpenShift</title>
-      <meta name="application-name" content="Red Hat OpenShift">
-       
-      <link rel="shortcut icon" href="static/assets/openshift-favicon.png">
-      <link rel="apple-touch-icon-precomposed" sizes="144x144" href="static/assets/openshift-apple-touch-icon-precomposed.png">
-      <link rel="mask-icon" href="static/assets/openshift-mask-icon.svg" color="#DB242F">
-      <meta name="msapplication-TileColor" content="#000000">
-      <meta name="msapplication-TileImage" content="static/assets/openshift-mstile-144x144.png">
-      
-    
-
-    <meta name="description" content="">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script type="text/javascript">
-      window.SERVER_FLAGS = {"addPage":"{}","alertManagerBaseURL":"/api/alertmanager","alertManagerPublicURL":"","alertmanagerUserWorkloadBaseURL":"/api/alertmanager-user-workload","authDisabled":false,"basePath":"/","branding":"ocp","consolePlugins":["monitoring-plugin"],"consoleVersion":"v6.0.6-22065-g92b8759d47","controlPlaneTopology":"HighlyAvailable","copiedCSVsDisabled":false,"customLogoURL":"","customProductName":"","developerCatalogCategories":"","developerCatalogTypes":"","documentationBaseURL":"https://access.redhat.com/documentation/en-us/openshift_container_platform/4.14/","GOARCH":"arm64","GOOS":"linux","grafanaPublicURL":"","graphqlBaseURL":"/api/graphql","hubConsoleURL":"","i18nNamespaces":[],"inactivityTimeout":0,"kubeAdminLogoutURL":"https://oauth-openshift.apps.adlink.schmaustech.com/logout","kubeAPIServerURL":"https://api.adlink.schmaustech.com:6443","kubectlClientID":"","loadTestFactor":0,"loginErrorURL":"https://console-openshift-console.apps.adlink.schmaustech.com/error","loginSuccessURL":"https://console-openshift-console.apps.adlink.schmaustech.com/","loginURL":"https://console-openshift-console.apps.adlink.schmaustech.com/auth/login","logoutRedirect":"","logoutURL":"https://console-openshift-console.apps.adlink.schmaustech.com/auth/logout","multiclusterLogoutRedirect":"https://console-openshift-console.apps.adlink.schmaustech.com/api/logout/multicluster","nodeArchitectures":["arm64"],"nodeOperatingSystems":["linux"],"perspectives":"","projectAccessClusterRoles":"","prometheusBaseURL":"/api/prometheus","prometheusPublicURL":"","prometheusTenancyBaseURL":"/api/prometheus-tenancy","quickStarts":"","releaseVersion":"4.14.2","statuspageID":"","telemetry":{},"thanosPublicURL":"","userSettingsLocation":"configmap","k8sMode":"in-cluster"};
-      let theme = localStorage.getItem('bridge/theme') || 'systemDefault';
-      if (theme === 'systemDefault' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        theme = 'dark';
-      }
-      if (theme === 'dark') {
-        document.documentElement.classList.add('pf-theme-dark');
-      }
-    </script>
-  <link href="static/app-bundle.c37aa30a6b26cf264768.css" rel="stylesheet"><link href="static/app-bundle.dc4f5f1cd8a5489971c6.css" rel="stylesheet"><link href="static/app-bundle.04bd182182726939ff28.css" rel="stylesheet"></head>
-
-  <body class="pf-m-redhat-font">
-    <noscript>JavaScript must be enabled.</noscript>
-    <div id="popper-container"></div>
-    <div id="app"></div>
-  <script type="text/javascript" src="static/main-chunk-4360858a39805f47818a.min.js"></script><script type="text/javascript" src="static/runtime~main-bundle-83373f6fcf6747e1c561.min.js"></script><script type="text/javascript" src="static/vendor-patternfly-core-chunk-f9a774f4908f2be047b1.min.js"></script><script type="text/javascript" src="static/vendors~main-chunk-e203dccdf92baa489a3e.min.js"></script></body>
-</html>
+% curl -k -I https://console-openshift-console.apps.adlink.schmaustech.com
+HTTP/1.1 200 OK
+referrer-policy: strict-origin-when-cross-origin
+set-cookie: csrf-token=+gglOP1AF2FjXsZ4E61xa53Dtagem8u5qFTG08ukPD6GnulryLllm7SQplizT51X5Huzqf4LTU47t7yzdCaL5g==; Path=/; Secure; SameSite=Lax
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+date: Tue, 28 Nov 2023 22:13:14 GMT
+content-type: text/html; charset=utf-8
+set-cookie: 1e2670d92730b515ce3a1bb65da45062=d15c9d1648c3a0f52dcf8c1991ce2d19; path=/; HttpOnly; Secure; SameSite=None
 ~~~
 
+Hopefully this blog was helpful in explaining how one can reduce the headaches of networking when it comes to provide a proof of concept of OpenShift that needs to be portable and yet simple without reinstalling OpenShift.  Using stock Red Hat Enterprise Linux and firewalld makes it pretty easy to build a NAT gateway and still forward specific traffice to expose what is required.  Further it makes it quite easy for me to carve up a single host and bring it to any one of my friends house for OpenShift Night.
