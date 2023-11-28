@@ -328,20 +328,76 @@ success
 
 Now that we have completed the firewalld configuration we should be ready to deploy OpenShift.   Since I have written about deploying OpenShift quite a bit in my past I won't go into the detailed steps here.  I will point out that I did use Red Hat Assisted Installer at [https://cloud.redhat.com](https://cloud.redhat.com)
 
+Once the OpenShift installation has completed we can pull down the kubeconfig and run a few commands to show its operations and how its networking is configured on the nodes:
 
 ~~~bash
-# curl https://192.168.0.70 -k
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title></title>
-  <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
-<link rel="stylesheet" href="styles.df04819ee43f8b8ff5a1.css"></head>
-<body>
-  <app-root></app-root>
-<script src="runtime-es2015.66c79b9d36e7169e27b0.js" type="module"></script><script src="runtime-es5.66c79b9d36e7169e27b0.js" nomodule defer></script><script src="polyfills-es5.6e1055b712d0b250b19e.js" nomodule defer></script><script src="polyfills-es2015.6022d6f28e0500e60d30.js" type="module"></script><script src="scripts.9ae077a2cc1f84a7f419.js" defer></script><script src="main-es2015.d2879de224f20b99fee3.js" type="module"></script><script src="main-es5.d2879de224f20b99fee3.js" nomodule defer></script></body>
+% oc get nodes -o wide
+NAME                         STATUS   ROLES                         AGE     VERSION           INTERNAL-IP       EXTERNAL-IP   OS-IMAGE                                                       KERNEL-VERSION                  CONTAINER-RUNTIME
+adlink-vm4.schmaustech.com   Ready    control-plane,master,worker   2d23h   v1.27.6+f67aeb3   192.168.100.131   <none>        Red Hat Enterprise Linux CoreOS 414.92.202311061957-0 (Plow)   5.14.0-284.40.1.el9_2.aarch64   cri-o://1.27.1-13.1.rhaos4.14.git956c5f7.el9
+adlink-vm5.schmaustech.com   Ready    control-plane,master,worker   2d23h   v1.27.6+f67aeb3   192.168.100.132   <none>        Red Hat Enterprise Linux CoreOS 414.92.202311061957-0 (Plow)   5.14.0-284.40.1.el9_2.aarch64   cri-o://1.27.1-13.1.rhaos4.14.git956c5f7.el9
+adlink-vm6.schmaustech.com   Ready    control-plane,master,worker   2d22h   v1.27.6+f67aeb3   192.168.100.133   <none>        Red Hat Enterprise Linux CoreOS 414.92.202311061957-0 (Plow)   5.14.0-284.40.1.el9_2.aarch64   cri-o://1.27.1-13.1.rhaos4.14.git956c5f7.el9
+~~~
+
+We can see from the above output the nodes are running on the 192.168.100.0/24 network which is our internal network.  However if we look at the system I am running on and ping the api.adlink.schmaustech.com we can see the response is coming from 192.168.0.75 which just happens to be the interface on enp1s0 of our gateway box.
+
+~~~bash
+% ping api.adlink.schmaustech.com -t 1
+PING api.adlink.schmaustech.com (192.168.0.75): 56 data bytes
+64 bytes from 192.168.0.75: icmp_seq=0 ttl=63 time=4.242 ms
+
+--- api.adlink.schmaustech.com ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 4.242/4.242/4.242/0.000 ms
+
+% ping console-openshift-console.apps.adlink.schmaustech.com -t 1
+PING console-openshift-console.apps.adlink.schmaustech.com (192.168.0.75): 56 data bytes
+64 bytes from 192.168.0.75: icmp_seq=0 ttl=63 time=2.946 ms
+
+--- console-openshift-console.apps.adlink.schmaustech.com ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 2.946/2.946/2.946/nan ms
+~~~
+
+~~~bash
+% curl -k https://console-openshift-console.apps.adlink.schmaustech.com
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+
+  <head>
+    <base href="/">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"> 
+      
+      <title>Red Hat OpenShift</title>
+      <meta name="application-name" content="Red Hat OpenShift">
+       
+      <link rel="shortcut icon" href="static/assets/openshift-favicon.png">
+      <link rel="apple-touch-icon-precomposed" sizes="144x144" href="static/assets/openshift-apple-touch-icon-precomposed.png">
+      <link rel="mask-icon" href="static/assets/openshift-mask-icon.svg" color="#DB242F">
+      <meta name="msapplication-TileColor" content="#000000">
+      <meta name="msapplication-TileImage" content="static/assets/openshift-mstile-144x144.png">
+      
+    
+
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script type="text/javascript">
+      window.SERVER_FLAGS = {"addPage":"{}","alertManagerBaseURL":"/api/alertmanager","alertManagerPublicURL":"","alertmanagerUserWorkloadBaseURL":"/api/alertmanager-user-workload","authDisabled":false,"basePath":"/","branding":"ocp","consolePlugins":["monitoring-plugin"],"consoleVersion":"v6.0.6-22065-g92b8759d47","controlPlaneTopology":"HighlyAvailable","copiedCSVsDisabled":false,"customLogoURL":"","customProductName":"","developerCatalogCategories":"","developerCatalogTypes":"","documentationBaseURL":"https://access.redhat.com/documentation/en-us/openshift_container_platform/4.14/","GOARCH":"arm64","GOOS":"linux","grafanaPublicURL":"","graphqlBaseURL":"/api/graphql","hubConsoleURL":"","i18nNamespaces":[],"inactivityTimeout":0,"kubeAdminLogoutURL":"https://oauth-openshift.apps.adlink.schmaustech.com/logout","kubeAPIServerURL":"https://api.adlink.schmaustech.com:6443","kubectlClientID":"","loadTestFactor":0,"loginErrorURL":"https://console-openshift-console.apps.adlink.schmaustech.com/error","loginSuccessURL":"https://console-openshift-console.apps.adlink.schmaustech.com/","loginURL":"https://console-openshift-console.apps.adlink.schmaustech.com/auth/login","logoutRedirect":"","logoutURL":"https://console-openshift-console.apps.adlink.schmaustech.com/auth/logout","multiclusterLogoutRedirect":"https://console-openshift-console.apps.adlink.schmaustech.com/api/logout/multicluster","nodeArchitectures":["arm64"],"nodeOperatingSystems":["linux"],"perspectives":"","projectAccessClusterRoles":"","prometheusBaseURL":"/api/prometheus","prometheusPublicURL":"","prometheusTenancyBaseURL":"/api/prometheus-tenancy","quickStarts":"","releaseVersion":"4.14.2","statuspageID":"","telemetry":{},"thanosPublicURL":"","userSettingsLocation":"configmap","k8sMode":"in-cluster"};
+      let theme = localStorage.getItem('bridge/theme') || 'systemDefault';
+      if (theme === 'systemDefault' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      }
+      if (theme === 'dark') {
+        document.documentElement.classList.add('pf-theme-dark');
+      }
+    </script>
+  <link href="static/app-bundle.c37aa30a6b26cf264768.css" rel="stylesheet"><link href="static/app-bundle.dc4f5f1cd8a5489971c6.css" rel="stylesheet"><link href="static/app-bundle.04bd182182726939ff28.css" rel="stylesheet"></head>
+
+  <body class="pf-m-redhat-font">
+    <noscript>JavaScript must be enabled.</noscript>
+    <div id="popper-container"></div>
+    <div id="app"></div>
+  <script type="text/javascript" src="static/main-chunk-4360858a39805f47818a.min.js"></script><script type="text/javascript" src="static/runtime~main-bundle-83373f6fcf6747e1c561.min.js"></script><script type="text/javascript" src="static/vendor-patternfly-core-chunk-f9a774f4908f2be047b1.min.js"></script><script type="text/javascript" src="static/vendors~main-chunk-e203dccdf92baa489a3e.min.js"></script></body>
 </html>
 ~~~
+
