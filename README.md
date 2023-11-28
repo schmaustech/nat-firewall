@@ -4,7 +4,7 @@
 
 Anyone who has ever done a proof of concept at a customer site knows how daunting it can be.  There is allocating the customers environment from a physical space perspective, power and cooling and then the elephant in the room networking.   Networking always tends to be the most challenging because the way a customer architects and secures their network varies from each and every customer.   Hence when delivering a proof of concept wouldn't it be awesome if all we needed was a single ipaddress and uplink for connectivity?   Linux has always given us the capability to provide such a simple elegant solution.  It's the very reason why router distros like OPNsense, OpenWRT, pfSense and IPFire are based on Linux.  In the following blog I will review configuring such a state with the idea of providing the simplicity of a single uplink for a proof of concept.
 
-In this example I wanted to deliver a working Red Hat OpenShift 3 node compact cluster that I could bring anywhere.   A fourth node acting as the gateway box will also run some infrastructure components with a switch to tie it all together.  In the diagram below we can see the layout of the configuration and how the networking is setup.  I should note this could use four physical boxes or in my testing I had all 4 nodes virtualized.   We can see I have a interface enp1s0 on the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface enp2s0 which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.  The internal network will never change but the external network could be anything and could change if we wanted it to.   What this means when bringing this setup to another location is I just need to update the enp1s0 interface with the right ipaddress, gateway and nameserver.   Further to ensure the OpenShift api and ingress wildcards resolve the external DNS (whatever controls that) will need those two records added and pointed to the enp1s0 interface.   Nothing changes on the OpenShift cluster nodes or gateway node configuration of dhcp or bind.
+In this example I wanted to deliver a working Red Hat OpenShift compact cluster that I could bring anywhere.   A fourth node acting as the gateway box will also run some infrastructure components with a switch to tie it all together.  In the diagram below we can see the layout of the configuration and how the networking is setup.  I should note this could use four physical boxes or in my testing I had all 4 nodes virtualized on a single host.   We can see I have a interface enp1s0 on the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface enp2s0 which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.  The internal network will never change but the external network could be anything and could change if we wanted it to.   What this means when bringing this setup to another location is I just need to update the enp1s0 interface with the right ipaddress, gateway and nameserver.   Further to ensure the OpenShift api and ingress wildcards resolve the external DNS (whatever controls that) will need those two records added and pointed to the enp1s0 interface ipaddress.  Nothing changes on the OpenShift cluster nodes or gateway node configurations of dhcp or bind.
 
 <img src="poc-in-box.png" style="width: 1000px;" border=0/>
 
@@ -12,13 +12,6 @@ The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with dhc
 
 ~~~bash
 cat /etc/dhcp/dhcpd.conf
-#
-# DHCP Server Configuration file.
-#   see /usr/share/doc/dhcp*/dhcpd.conf.example
-#   see dhcpd.conf(5) man page
-#
-#allow bootp;
-#allow booting;
 option domain-name "schmaustech.com";
 option domain-name-servers 192.168.100.1;
 default-lease-time 1200;
@@ -156,9 +149,9 @@ api-int.adlink	IN	A	192.168.100.134
 *.apps.adlink	IN	A	192.168.100.135
 ~~~
 
-In order to have the proper network address translation and service redirection we need to modify the default firewalld configuration on the box.  
+In order to have the proper network address translation and service redirection we need to modify the default firewalld configuration on the gateway box.  
 
-First let's go ahead and see what the active zone is with firewalld.   We will find that both interfaces are in the public zone.
+First let's go ahead and see what the active zone is with firewalld.   We will find that both interfaces are in the public zone which is the default.
 
 ~~~bash
 $ sudo firewall-cmd --get-active-zone
@@ -166,7 +159,7 @@ public
   interfaces: enp2s0 enp1s0
 ~~~
 
-We will first set our two interfaces to variables to make the rest of the commands easy to follow.  Interface enp1s0 will be set to external and enp2s0 will be set to internal.  Then we will go ahead and create an internal zone.  Note we do not need to create an external zone because one exists by default with firewalld.   We can then assign the interfaces to their proper zones.
+We will first set our two interfaces to variables to make the rest of the commands easy to follow.  Interface enp1s0 will be set to external and enp2s0 will be set to internal.  Then we will go ahead and create an internal zone.  Note we do not need to create an external zone because one exists by default with firewalld.   We can then assign the interfaces to their respective zones.
 
 ~~~bash
 $ sudo EXTERNAL=enp1s0
@@ -184,7 +177,7 @@ The interface is under control of NetworkManager, setting zone to 'internal'.
 success
 ~~~
 
-Next we can enable masquerading between the zones.  We will find that by default masquerading was enabled by default for the external zone.  However if one chose different zone names we need to point out that both need to be set.
+Next we can enable masquerading between the zones.  We will find that by default masquerading was enabled for the external zone.  However if one chose different zone names we need to point out that both need to be set.
 
 ~~~bash
 $ sudo firewall-cmd --zone=external --add-masquerade --permanent
@@ -257,7 +250,7 @@ internal (active)
   rich rules:
 ~~~
 
-The zones need to be updated so we can ensure any external traffic bound for https and port 6443 is sent to the OpenShift ingress virtual ipaddress and OpenShift api virual ipaddress respectively.   We also need to allow for DNS resolution traffic internally outbound on the internal zone so we can resolve anything outside of our OpenShift environment.
+The zones need to be updated for OpenShift so we can ensure any external traffic bound for https and port 6443 is sent to the OpenShift ingress virtual ipaddress and OpenShift api virual ipaddress respectively.   We also need to allow for DNS resolution traffic internally outbound on the internal zone so we can resolve anything outside of our OpenShift environment dns records (like registry.redhat.io).
 
 ~~~bash
 $ sudo firewall-cmd --permanent --zone=external --add-service=https
@@ -316,7 +309,7 @@ internal (active)
   rich rules: 
 ~~~
 
-Up to this point we would have a working setup if we were on Red Hat Enterprise Linux 8.x.  However there were changes made with Red Hat Enterprise Linux 9.x and hence we need to add a internal to external policy to ensure traffic flow.
+Up to this point we would have a working setup if we were on Red Hat Enterprise Linux 8.x.  However there were changes made with Red Hat Enterprise Linux 9.x and hence we need to add a internal to external policy to ensure proper ingress/egress traffic flow.
 
 ~~~bash
 $ sudo firewall-cmd --permanent --new-policy policy_int_to_ext
@@ -333,6 +326,7 @@ $ sudo firewall-cmd --reload
 success
 ~~~
 
+Now that we have completed the firewalld configuration we should be ready to deploy OpenShift.   Since I have written about deploying OpenShift quite a bit in my past I won't go into the detailed steps here.  I will point out that I did use Red Hat Assisted Installer at [https://cloud.redhat.com](https://cloud.redhat.com)
 
 
 ~~~bash
