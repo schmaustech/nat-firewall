@@ -8,12 +8,160 @@ In this example I wanted to deliver a working Red Hat OpenShift 3 node compact c
 
 <img src="poc-in-box.png" style="width: 1000px;" border=0/>
 
-The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with dhcp and bind services both of which are listening only on the internal enp2s0 interface.  In order to have the proper network address translation and service redirection we need to modify the default firewalld configuration on the box.  
+The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with dhcp and bind services both of which are listening only on the internal enp2s0 interface.  Below is the dhcpd.conf config I am using.
+
+~~~bash
+cat /etc/dhcp/dhcpd.conf
+#
+# DHCP Server Configuration file.
+#   see /usr/share/doc/dhcp*/dhcpd.conf.example
+#   see dhcpd.conf(5) man page
+#
+#allow bootp;
+#allow booting;
+option domain-name "schmaustech.com";
+option domain-name-servers 192.168.100.1;
+default-lease-time 1200;
+max-lease-time 1000;
+authoritative;
+log-facility local7;
+
+subnet 192.168.100.0 netmask 255.255.255.0 {
+        option routers                  192.168.100.1;
+        option subnet-mask              255.255.255.0;
+        option domain-search            "schmaustech.com";
+        option domain-name-servers      192.168.100.1,192.168.100.1;
+        option time-offset              -18000;     # Eastern Standard Time
+	range   192.168.100.225   192.168.100.240;
+        next-server 192.168.100.1;
+        if exists user-class and option user-class = "iPXE" {
+            filename "ipxe";
+        } else {
+            filename "pxelinux.0";
+        }
+        class "httpclients" {
+          match if substring (option vendor-class-identifier, 0, 10) = "HTTPClient";
+          option vendor-class-identifier "HTTPClient";
+          filename "http://192.168.100.246/arm/EFI/BOOT/BOOTAA64.EFI";
+    }
+}
+
+host adlink-vm1 {
+   option host-name "adlink-vm1.schmaustech.com";
+   hardware ethernet 52:54:00:89:8d:d8;
+   fixed-address 192.168.100.128;
+}
+
+host adlink-vm2 {
+   option host-name "adlink-vm2.schmaustech.com";
+   hardware ethernet 52:54:00:b1:d4:9d;
+   fixed-address 192.168.100.129;
+}
+
+host adlink-vm3 {
+   option host-name "adlink-vm3.schmaustech.com";
+   hardware ethernet 52:54:00:5a:69:d1;
+   fixed-address 192.168.100.130;
+}
+
+host adlink-vm4 {
+   option host-name "adlink-vm4.schmaustech.com";
+   hardware ethernet 52:54:00:ef:25:04;
+   fixed-address 192.168.100.131;
+}
+
+host adlink-vm5 {
+   option host-name "adlink-vm5.schmaustech.com";
+   hardware ethernet 52:54:00:b6:fb:7d;
+   fixed-address 192.168.100.132;
+}
+
+host adlink-vm6 {
+   option host-name "adlink-vm6.schmaustech.com";
+   hardware ethernet 52:54:00:09:2e:34;
+   fixed-address 192.168.100.133;
+}
+~~~
+
+And the named.conf and schmaustech.com zone files I have configured.
+
+~~~bash
+$ cat /etc/named.conf
+options {
+	listen-on port 53 { 127.0.0.1; 192.168.100.1; };
+	listen-on-v6 port 53 { any; };
+	forwarders { 8.8.8.8; };
+	directory 	"/var/named";
+	dump-file 	"/var/named/data/cache_dump.db";
+	statistics-file "/var/named/data/named_stats.txt";
+	memstatistics-file "/var/named/data/named_mem_stats.txt";
+	recursing-file  "/var/named/data/named.recursing";
+	secroots-file   "/var/named/data/named.secroots";
+        allow-query	{ any; };
+	recursion yes;
+	dnssec-enable yes;
+	dnssec-validation yes;
+	dnssec-lookaside auto;
+	bindkeys-file "/etc/named.root.key";
+	managed-keys-directory "/var/named/dynamic";
+	pid-file "/run/named/named.pid";
+	session-keyfile "/run/named/session.key";
+};
+
+logging {
+        channel default_debug {
+                file "data/named.run";
+                severity dynamic;
+        };
+};
+
+zone "." IN {
+	type hint;
+	file "named.ca";
+};
+
+include "/etc/named.rfc1912.zones";
+include "/etc/named.root.key";
+
+zone "schmaustech.com" IN {
+        type master;
+        file "schmaustech.com.zone";
+};
+
+zone    "100.168.192.in-addr.arpa" IN {
+       type master;
+       file "100.168.192.in-addr.arpa";
+};
+
+$ cat /var/named/schmaustech.com.zone 
+$TTL 1D
+@   IN SOA  dns.schmaustech.com   root.dns.schmaustech.com. (
+                                       2022121315     ; serial
+                                       1D              ; refresh
+                                       1H              ; retry
+                                       1W              ; expire
+                                       3H )            ; minimum
+
+$ORIGIN         schmaustech.com.
+schmaustech.com.            IN      NS      dns.schmaustech.com.
+dns                     IN      A       192.168.100.1
+adlink-vm1	IN	A	192.168.100.128
+adlink-vm2	IN	A	192.168.100.129
+adlink-vm3	IN	A	192.168.100.130
+adlink-vm4	IN	A	192.168.100.131
+adlink-vm5	IN	A	192.168.100.132
+adlink-vm6	IN	A	192.168.100.133
+api.adlink	IN	A	192.168.100.134
+api-int.adlink	IN	A	192.168.100.134
+*.apps.adlink	IN	A	192.168.100.135
+~~~
+
+In order to have the proper network address translation and service redirection we need to modify the default firewalld configuration on the box.  
 
 First let's go ahead and see what the active zone is with firewalld.   We will find that both interfaces are in the public zone.
 
 ~~~bash
-# firewall-cmd --get-active-zone
+$ sudo firewall-cmd --get-active-zone
 public
   interfaces: enp2s0 enp1s0
 ~~~
@@ -21,17 +169,17 @@ public
 We will first set our two interfaces to variables to make the rest of the commands easy to follow.  Interface enp1s0 will be set to external and enp2s0 will be set to internal.  Then we will go ahead and create an internal zone.  Note we do not need to create an external zone because one exists by default with firewalld.   We can then assign the interfaces to their proper zones.
 
 ~~~bash
-# EXTERNAL=enp1s0
-# INTERNAL=enp2s0
+$ sudo EXTERNAL=enp1s0
+$ sudo INTERNAL=enp2s0
 
-# firewall-cmd --set-default-zone=internal
+$ sudo firewall-cmd --set-default-zone=internal
 success
 
-# firewall-cmd --change-interface=$EXTERNAL --zone=external --permanent
+$ sudo firewall-cmd --change-interface=$EXTERNAL --zone=external --permanent
 The interface is under control of NetworkManager, setting zone to 'external'.
 success
 
-# firewall-cmd --change-interface=$INTERNAL --zone=internal --permanent
+$ sudo firewall-cmd --change-interface=$INTERNAL --zone=internal --permanent
 The interface is under control of NetworkManager, setting zone to 'internal'.
 success
 ~~~
@@ -39,44 +187,44 @@ success
 Next we can enable masquerading between the zones.  We will find that by default masquerading was enabled by default for the external zone.  However if one chose different zone names we need to point out that both need to be set.
 
 ~~~bash
-# firewall-cmd --zone=external --add-masquerade --permanent
+$ sudo firewall-cmd --zone=external --add-masquerade --permanent
 Warning: ALREADY_ENABLED: masquerade
 success
 
-# firewall-cmd --zone=internal --add-masquerade --permanent
+$ sudo firewall-cmd --zone=internal --add-masquerade --permanent
 success
 ~~~
 
 Now we can add the rules to forward traffic between zones.
 
 ~~~bash
-# firewall-cmd --direct --permanent --add-rule ipv4 nat POSTROUTING 0 -o $EXTERNAL -j MASQUERADE
+$ sudo firewall-cmd --direct --permanent --add-rule ipv4 nat POSTROUTING 0 -o $EXTERNAL -j MASQUERADE
 success
 
-# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $INTERNAL -o $EXTERNAL -j ACCEPT
+$ sudo firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $INTERNAL -o $EXTERNAL -j ACCEPT
 success
 
-# firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $EXTERNAL -o $INTERNAL -m state --state RELATED,ESTABLISHED -j ACCEPT
+$ sudo firewall-cmd --direct --permanent --add-rule ipv4 filter FORWARD 0 -i $EXTERNAL -o $INTERNAL -m state --state RELATED,ESTABLISHED -j ACCEPT
 success
 ~~~
 
 At this point let's go ahead and reload our firewall and show the active zones again.  Now we should see our interfaces are in their proper zones and active. 
 
 ~~~bash
-# firewall-cmd --reload
+$ sudo firewall-cmd --reload
 success
 
-# firewall-cmd --get-active-zone
+$ sudo firewall-cmd --get-active-zone
 external
   interfaces: enp1s0
 internal
   interfaces: enp2s0
 ~~~
 
-If we look at each zone we can see the configuration that currently exists for each zone.
+If we look at each zone we can see the default configuration that currently exists for each zone.
 
 ~~~bash
-# firewall-cmd --list-all --zone=external
+$ sudo firewall-cmd --list-all --zone=external
 external (active)
   target: default
   icmp-block-inversion: no
@@ -92,7 +240,7 @@ external (active)
   icmp-blocks:
   rich rules:
 
-# firewall-cmd --list-all --zone=internal
+$ sudo firewall-cmd --list-all --zone=internal
 internal (active)
   target: default
   icmp-block-inversion: no
@@ -109,78 +257,83 @@ internal (active)
   rich rules:
 ~~~
 
-The zones need to be updated so we can ensure any external traffic bound for https and port 6443 is sent to the OpenShift ingress virtual ipaddress and OpenShift api virual ipaddress respectively.   We also need to allow for DNS resolution traffic internally on the internal zone.
+The zones need to be updated so we can ensure any external traffic bound for https and port 6443 is sent to the OpenShift ingress virtual ipaddress and OpenShift api virual ipaddress respectively.   We also need to allow for DNS resolution traffic internally outbound on the internal zone so we can resolve anything outside of our OpenShift environment.
 
 ~~~bash
-# firewall-cmd --permanent --zone=external --add-service=https
+$ sudo firewall-cmd --permanent --zone=external --add-service=https
 success
-# firewall-cmd --permanent --zone=internal --add-service=https
+$ sudo firewall-cmd --permanent --zone=internal --add-service=https
 success
-# firewall-cmd --permanent --zone=external --add-forward-port=port=443:proto=tcp:toport=443:toaddr=192.168.100.72
+$ sudo firewall-cmd --permanent --zone=external --add-forward-port=port=443:proto=tcp:toport=443:toaddr=192.168.100.135
 success
-# firewall-cmd --reload
+$ sudo firewall-cmd --permanent --zone=external --add-port=6443/tcp
 success
-# firewall-cmd --list-all --zone=external
+$ sudo firewall-cmd --permanent --zone=internal --add-port=6443/tcp
+sucess
+$ sudo firewall-cmd --permanent --zone=external --add-forward-port=port=6443:proto=tcp:toport=6443:toaddr=192.168.100.134
+success
+$ sudo firewall-cmd --permanent --zone=internal --add-service=dns
+success
+$ sudo firewall-cmd --reload
+success
+~~~
+
+After we reloaded our configuration let's take a look at the external and internal zones to validate our changes took place.
+
+~~~bash
+$ sudo firewall-cmd --list-all --zone=external
 external (active)
   target: default
   icmp-block-inversion: no
   interfaces: enp1s0
-  sources:
+  sources: 
   services: https ssh
-  ports:
-  protocols:
-  forward: no
+  ports: 6443/tcp
+  protocols: 
+  forward: yes
   masquerade: yes
-  forward-ports:
-        port=443:proto=tcp:toport=443:toaddr=192.168.100.72
-  source-ports:
-  icmp-blocks:
+  forward-ports: 
+	port=443:proto=tcp:toport=443:toaddr=192.168.100.135
+	port=6443:proto=tcp:toport=6443:toaddr=192.168.100.134
+  source-ports: 
+  icmp-blocks: 
   rich rules:
-[root@bmo ~]# firewall-cmd --list-all --zone=internal
+
+$ sudo firewall-cmd --list-all --zone=internal
 internal (active)
   target: default
   icmp-block-inversion: no
   interfaces: enp2s0
-  sources:
-  services: cockpit dhcpv6-client https mdns samba-client ssh
-  ports:
-  protocols:
-  forward: no
+  sources: 
+  services: cockpit dhcpv6-client dns https mdns samba-client ssh
+  ports: 6443/tcp
+  protocols: 
+  forward: yes
   masquerade: yes
-  forward-ports:
-  source-ports:
-  icmp-blocks:
-  rich rules:
+  forward-ports: 
+  source-ports: 
+  icmp-blocks: 
+  rich rules: 
 ~~~
 
 Up to this point we would have a working setup if we were on Red Hat Enterprise Linux 8.x.  However there were changes made with Red Hat Enterprise Linux 9.x and hence we need to add a internal to external policy to ensure traffic flow.
 
 ~~~bash
-[root@router ~]# firewall-cmd --permanent --new-policy policy_int_to_ext
+$ sudo firewall-cmd --permanent --new-policy policy_int_to_ext
 success
-[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --add-ingress-zone internal
+$ sudo firewall-cmd --permanent --policy policy_int_to_ext --add-ingress-zone internal
 success
-[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --add-egress-zone external
+$ sudo firewall-cmd --permanent --policy policy_int_to_ext --add-egress-zone external
 success
-[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --set-priority 100
+$ sudo firewall-cmd --permanent --policy policy_int_to_ext --set-priority 100
 success
-[root@router ~]# firewall-cmd --permanent --policy policy_int_to_ext --set-target ACCEPT
+$ sudo firewall-cmd --permanent --policy policy_int_to_ext --set-target ACCEPT
 success
-[root@router ~]# firewall-cmd --reload
+$ sudo firewall-cmd --reload
 success
-[root@router ~]# firewall-cmd --permanent --zone=internal --add-service=dns
-success
-[root@router ~]# firewall-cmd --reload~~~
-
-
-~~~bash
-firewall-cmd --permanent --new-policy policy_int_to_ext
-firewall-cmd --permanent --policy policy_int_to_ext --add-ingress-zone internal
-firewall-cmd --permanent --policy policy_int_to_ext --add-egress-zone external
-firewall-cmd --permanent --policy policy_int_to_ext --set-priority 100
-firewall-cmd --permanent --policy policy_int_to_ext --set-target ACCEPT
-firewall-cmd --reload
 ~~~
+
+
 
 ~~~bash
 # curl https://192.168.0.70 -k
