@@ -2,13 +2,13 @@
 
 <img src="lab.jpg" style="width: 1000px;" border=0/>
 
-Anyone who has ever done a proof of concept at a customer site knows how daunting it can be.  There is allocating the customers environment from a physical space perspective, power and cooling and then the elephant in the room networking.   Networking always tends to be the most challenging because the way a customer architects and secures their network varies from each and every customer.   Hence when delivering a proof of concept wouldn't it be awesome if all we needed was a single ipaddress and uplink for connectivity?   Linux has always given us the capability to provide such a simple elegant solution.  It's the very reason why router distros like OPNsense, OpenWRT, pfSense and IPFire are based on Linux.  In the following blog I will review configuring such a state with the idea of providing the simplicity of a single uplink for a proof of concept.
+Anyone who has ever done a proof of concept at a customer site knows how daunting it can be.  There is allocating the customer's environment from a physical space perspective, power and cooling, and then the elephant in the room: networking.   Networking always tends to be the most challenging because the way a customer architects and secures their network varies from each and every customer.   Hence, when delivering a proof of concept, wouldn't it be awesome if all we needed was a single ipaddress and uplink for connectivity?   Linux has always given us the capability to provide such a simple, elegant solution.  It's the very reason why router distros like OPNsense, OpenWRT, pfSense and IPFire are based on Linux.  In the following blog, I will review configuring such a state with the idea of providing the simplicity of a single uplink as a proof of concept.
 
-In this example I wanted to deliver a working Red Hat OpenShift compact cluster that I could bring anywhere.   A fourth node acting as the gateway box will also run some infrastructure components with a switch to tie it all together.  In the diagram below we can see the layout of the configuration and how the networking is setup.  I should note this could use four physical boxes or in my testing I had all 4 nodes virtualized on a single host.   We can see I have a interface enp1s0 on the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface enp2s0 which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.  The internal network will never change but the external network could be anything and could change if we wanted it to.   What this means when bringing this setup to another location is I just need to update the enp1s0 interface with the right ipaddress, gateway and nameserver.   Further to ensure the OpenShift api and ingress wildcards resolve the external DNS (whatever controls that) will need those two records added and pointed to the enp1s0 interface ipaddress.  Nothing changes on the OpenShift cluster nodes or gateway node configurations of dhcp or bind.
+In this example, I wanted to deliver a working Red Hat OpenShift compact cluster that I could bring anywhere.   A fourth node acting as the gateway box will also run some infrastructure components with a switch to tie it all together.  In the diagram below, we can see the layout of the configuration and how the networking is set up.  I should note that this could use four physical boxes, or in my testing, I had all 4 nodes virtualized on a single host.   We can see I have an interface enp1s0 on the gateway node that is connected to the upstream network or maybe even the internet depending on circumstances and then another internal interface enp2s0 which is connected to the internal network switch.  All the OpenShift nodes are connected to the internal network switch as well.  The internal network will never change, but the external network could be anything and could change if we wanted it to.   What this means when bringing this setup to another location is I just need to update the enp1s0 interface with the right ipaddress, gateway and nameserver.   Further, to ensure the OpenShift API and ingress wildcards resolve the external DNS (whatever controls that) will need those two records added and pointed to the enp1s0 interface ipaddress.  Nothing changes on the OpenShift cluster nodes or gateway node configurations for DHCP or bind.
 
 <img src="poc-in-box.png" style="width: 1000px;" border=0/>
 
-The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with dhcp and bind services both of which are listening only on the internal enp2s0 interface.  Below is the dhcpd.conf config I am using.
+The gateway node has Red Hat Enterprise Linux 9.3 installed on it along with DHCP and Bind services both of which are listening only on the internal enp2s0 interface.  Below is the dhcpd.conf config I am using.
 
 ~~~bash
 cat /etc/dhcp/dhcpd.conf
@@ -76,7 +76,7 @@ host adlink-vm6 {
 }
 ~~~
 
-And the named.conf and schmaustech.com zone files I have configured.
+And the Bind named.conf and schmaustech.com zone files I have configured.
 
 ~~~bash
 $ cat /etc/named.conf
@@ -358,7 +358,7 @@ PING console-openshift-console.apps.adlink.schmaustech.com (192.168.0.75): 56 da
 round-trip min/avg/max/stddev = 2.946/2.946/2.946/nan ms
 ~~~
 
-Finally if we curl the OpenShift console from my Mac we can see we also get a 200 response so the console is accessible from outside of the private network OpenShift is installed on.
+Finally, if we curl the OpenShift console from my Mac, we can see we also get a 200 response, so the console is accessible from outside the private network OpenShift is installed on.
 
 ~~~bash
 % curl -k -I https://console-openshift-console.apps.adlink.schmaustech.com
@@ -374,4 +374,4 @@ content-type: text/html; charset=utf-8
 set-cookie: 1e2670d92730b515ce3a1bb65da45062=d15c9d1648c3a0f52dcf8c1991ce2d19; path=/; HttpOnly; Secure; SameSite=None
 ~~~
 
-Hopefully this blog was helpful in explaining how one can reduce the headaches of networking when it comes to provide a proof of concept of OpenShift that needs to be portable and yet simple without reinstalling OpenShift.  Using stock Red Hat Enterprise Linux and firewalld makes it pretty easy to build a NAT gateway and still forward specific traffice to expose what is required.  Further it makes it quite easy for me to carve up a single host and bring it to any one of my friends house for OpenShift Night.
+Hopefully this blog was helpful in explaining how one can reduce the headaches of networking when it comes to providing a proof of concept of OpenShift that needs to be portable and yet simple without reinstalling OpenShift.  Using stock Red Hat Enterprise Linux and firewalld makes it pretty easy to build a NAT gateway and still forward specific traffic to expose what is required.  Further, it makes it quite easy for me to carve up a single host and bring it to any one of my friends houses for OpenShift Night.
