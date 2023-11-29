@@ -326,6 +326,25 @@ $ sudo firewall-cmd --reload
 success
 ~~~
 
+Let's take a quick look at the policies we set to confirm it is there.
+
+~~~bash
+$ sudo firewall-cmd --info-policy=policy_int_to_ext
+policy_int_to_ext (active)
+  priority: 100
+  target: ACCEPT
+  ingress-zones: internal
+  egress-zones: external
+  services: 
+  ports: 
+  protocols: 
+  masquerade: no
+  forward-ports: 
+  source-ports: 
+  icmp-blocks: 
+  rich rules:
+~~~
+
 Now that we have completed the firewalld configuration we should be ready to deploy OpenShift.   Since I have written about deploying OpenShift quite a bit in my past I won't go into the detailed steps here.  I will point out that I did use Red Hat Assisted Installer at [https://cloud.redhat.com](https://cloud.redhat.com)
 
 Once the OpenShift installation has completed we can pull down the kubeconfig and run a few commands to show its operations and how its networking is configured on the nodes:
